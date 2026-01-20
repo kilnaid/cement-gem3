@@ -130,7 +130,7 @@ def main_app():
                     google_search_tool = types.Tool(google_search=types.GoogleSearch())
                     
                     response = client.models.generate_content(
-                        model="gemini-3-flash",
+                        model="gemini-3-flash-preview",
                         contents=f"{system_prompt}\n\n질문: {prompt}",
                         config=types.GenerateContentConfig(
                             tools=[google_search_tool],
@@ -154,3 +154,4 @@ if __name__ == "__main__":
         login_page()
     else:
         main_app()
+
