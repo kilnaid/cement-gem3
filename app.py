@@ -1,3 +1,20 @@
+import sys
+import subprocess
+
+try:
+    # 1. 문제를 일으키는 'pinecone' (껍데기 패키지)가 있다면 강제 삭제
+    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "pinecone"])
+    print("✅ [System] 충돌 유발 패키지(pinecone) 삭제 완료")
+except Exception:
+    pass # 없으면 패스
+
+# 2. 올바른 'pinecone-client'가 없으면 강제 설치
+try:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pinecone-client>=5.0.0"])
+    print("✅ [System] 정상 패키지(pinecone-client) 로드 완료")
+except Exception as e:
+    print(f"⚠️ [System] 설치 중 메시지: {e}")
+    
 import streamlit as st
 import os
 import time
@@ -184,4 +201,5 @@ if __name__ == "__main__":
     if not st.session_state.logged_in:
         login_page()
     else:
+
         main_app()
