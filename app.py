@@ -10,19 +10,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_env(key):
-    """배포 환경(Secrets)과 로컬(.env) 환경 변수 통합 로드"""
     if key in st.secrets:
         return st.secrets[key]
     return os.getenv(key)
 
-# 페이지 레이아웃 설정
-st.set_page_config(
-    page_title="Cement Expert AI (Gemini 3)",
-    page_icon="🏗️",
-    layout="wide"
-)
+st.set_page_config(page_title="Cement Expert AI (Full Memory)", page_icon="🏗️", layout="wide")
 
-# 2. 로그인 시스템 (보안 정책 적용)
+# 2. 로그인 시스템 (기존 유지)
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -36,17 +30,14 @@ def login_page():
             if st.form_submit_button("시스템 접속", use_container_width=True):
                 if uid == "kilnaid" and upw == "1q2w3e4r": #
                     st.session_state.logged_in = True
-                    st.success("인증 성공! 공정 비서를 가동합니다.")
-                    time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("❌ 잘못된 자격 증명입니다.")
+                    st.error("❌ 자격 증명이 올바르지 않습니다.")
 
 # 3. 메인 채팅 애플리케이션
 def main_app():
     @st.cache_resource
     def init_clients():
-        # Pinecone 및 Gemini 3 SDK 초기화
         pc = Pinecone(api_key=get_env("PINECONE_API_KEY"))
         idx = pc.Index(get_env("PINECONE_INDEX_NAME"))
         g_client = genai.Client(api_key=get_env("GEMINI_API_KEY"))
@@ -56,49 +47,38 @@ def main_app():
 
     with st.sidebar:
         st.header("🔧 시스템 상태")
-        st.success("데이터베이스 연결됨")
-        st.info("엔진: Gemini 3 Flash Preview") #
+        st.success("데이터베이스 연결됨 (RAG)")
+        st.info("지능형 메모리 활성화 (Full History)")
         st.markdown("---")
         if st.button("로그아웃", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    st.title("🏗️ 시멘트 생산·품질 지능형 비서")
-    st.caption("🚀 Gemini 3 Flash & Deep-Dive RAG Insight (Error Fixed)")
+    st.title("🏗️ 시멘트 생산·품질 기술 고문")
+    st.caption("🚀 Gemini 3 Flash & Multi-Turn Conversation Memory")
 
-    # 대화 기록 관리
+    # [중요] 대화 기록 관리 및 초기화
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "반갑습니다, 관리자님. 30년 경력의 시멘트 기술 고문으로서 공정 전반에 대한 심도 있는 분석을 시작합니다."}
-        ]
+        st.session_state.messages = [] # 빈 리스트로 시작 (첫 메시지는 루프 밖에서 처리)
 
+    # 대화 기록 출력 (UI)
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # 질문 입력 및 처리
-    if prompt := st.chat_input("분석이 필요한 공정 이슈를 입력하세요..."):
+    # 질문 입력
+    if prompt := st.chat_input("공정 이슈나 지난 대화에 이어 질문하세요..."):
+        # 1. 사용자 질문 UI 표시 및 저장
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("전문 기술 문서 정밀 분석 및 추론 중..."):
+            with st.spinner("과거 대화와 전문 문서를 종합 분석 중..."):
                 try:
-                    # [Step 1] 수동 임베딩 생성 (400 에러 해결의 핵심)
-                    # 기존 학습 데이터와 동일한 004 모델을 사용하여 768 벡터 생성
-                    emb_res = client.models.embed_content(
-                        model="models/text-embedding-004",
-                        contents=prompt
-                    )
-                    query_vector = emb_res.embeddings[0].values
-
-                    # [Step 2] Pinecone 벡터 검색 (top_k=15 확대)
-                    search_res = index.query(
-                        vector=query_vector, # 'data' 대신 직접 'vector' 전달
-                        top_k=15, 
-                        include_metadata=True
-                    )
+                    # [Step 1] 수동 임베딩 및 검색 (400 에러 방지)
+                    emb_res = client.models.embed_content(model="models/text-embedding-004", contents=prompt)
+                    search_res = index.query(vector=emb_res.embeddings[0].values, top_k=15, include_metadata=True)
 
                     context_text = ""
                     sources = set()
@@ -107,46 +87,51 @@ def main_app():
                         context_text += f"\n[출처: {meta.get('source')} (P.{meta.get('page')})]\n{meta.get('text', '')}\n---"
                         sources.add(f"{meta.get('source')} (P.{int(meta.get('page', 0))})")
 
-                    # [Step 3] 30년 경력 기술 고문 페르소나 적용 (형식적 제약 제거)
-                    system_prompt = f"""
-                    당신은 30년 경력의 시멘트 공정 및 품질 관리 분야 세계 최고 기술 고문입니다. 
-                    단순한 요약이 아니라, 관리자의 질문에 대해 현상의 본질을 꿰뚫는 '원인-이론-대책'의 유기적인 인과관계를 설명하세요.
+                    # [Step 2] 시스템 지침 구성
+                    system_instruction = f"""
+                    당신은 30년 경력의 시멘트 기술 고문입니다. 
+                    관리자와의 대화 흐름을 완벽히 파악하여, 이전 질문에서 다룬 맥락을 유지하며 답변하세요.
 
-                    [가이드라인]
-                    1. **심층 추론**: 킬른 내부의 열역학적 변화, 화학적 상 평형($CaO$, $C_3S$ 등), 설비 물리적 거동 간의 복합적 상관관계를 분석하세요.
-                    2. **맥락 활용**: 제공된 [기술 문서 내용]에 포함된 구체적인 수치와 도표 데이터를 적극적으로 인용하여 답변의 전문성을 높이세요.
-                    3. **유연한 서술**: 억지로 포맷에 맞추기보다, 전문가가 대화하듯 논리적이고 유려하게 답변하세요.
-                    4. **하이브리드 지식**: 문서에 없는 내용은 구글 검색 정보와 당신의 공학적 추론을 결합하여 'Deep Insight'를 제공하세요.
-
-                    [기술 문서 내용]:
+                    - 이번 질문에 대한 전문 문서 근거:
                     {context_text}
+
+                    [지침]
+                    1. 과거 대화에 언급된 설비나 특정 수치를 기억하고 이를 바탕으로 추론하세요.
+                    2. 형식에 얽매이지 말고, 전문가가 기술 보고서를 작성하듯 심도 있고 자세하고, 길게 서술하세요.
+                    3. 문서에 없는 내용은 웹 검색과 당신의 공학적 지식을 결합하여 통찰을 제공하세요.
+                    4. **맥락 활용**: 제공된 [기술 문서 내용]에 포함된 구체적인 수치와 도표 데이터를 적극적으로 인용하여 답변의 전문성을 높이세요.
+                    5. **유연한 서술**: 억지로 포맷에 맞추기보다, 전문가가 대화하듯 논리적이고 유려하게 답변하세요.
+                    6. **하이브리드 지식**: 문서에 없는 내용은 구글 검색 정보와 당신의 공학적 추론을 결합하여 'Deep Insight'를 제공하세요.
                     """
 
-                    # [Step 4] Gemini 3 호출 (웹 검색 도구 포함)
+                    # [Step 3] 대화 기록(History) 재구성 (Gemini API 형식에 맞춤)
+                    # 과거 메시지들을 Gemini가 이해할 수 있는 형태의 'contents' 리스트로 변환합니다.
+                    chat_history = []
+                    for m in st.session_state.messages[:-1]: # 마지막 질문 제외한 과거 기록
+                        role = "user" if m["role"] == "user" else "model"
+                        chat_history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+
+                    # [Step 4] 답변 생성 (전체 히스토리 + 시스템 지침 + 현재 질문)
                     google_search_tool = types.Tool(google_search=types.GoogleSearch())
                     
                     response = client.models.generate_content(
-                        model="gemini-3-flash-preview", # 안정적인 최신 모델명
-                        contents=f"{system_prompt}\n\n분석 요청: {prompt}",
-                        config=types.GenerateContentConfig(
-                            tools=[google_search_tool],
-                            temperature=0.3
-                        )
+                        model="gemini-3-flash-preview",
+                        contents=chat_history + [
+                            types.Content(role="user", parts=[types.Part(text=f"{system_instruction}\n\n최종 질문: {prompt}")])
+                        ],
+                        config=types.GenerateContentConfig(tools=[google_search_tool], temperature=0.3)
                     )
                     
                     full_response = response.text
                     if sources:
-                        full_response += "\n\n**📌 분석 참조 기술 문서:**\n- " + "\n- ".join(sorted(list(sources)))
+                        full_response += "\n\n**📌 참조 문서:**\n- " + "\n- ".join(sorted(list(sources)))
 
                     st.markdown(full_response)
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
 
                 except Exception as e:
-                    st.error(f"⚠️ 시스템 오류 발생: {e}")
-                    st.info("💡 Tip: Pinecone 인덱스 치수가 768이 맞는지 다시 한번 확인해 주세요.")
+                    st.error(f"⚠️ 처리 중 오류 발생: {e}")
 
 if __name__ == "__main__":
-    if not st.session_state.logged_in:
-        login_page()
-    else:
-        main_app()
+    if not st.session_state.logged_in: login_page()
+    else: main_app()
