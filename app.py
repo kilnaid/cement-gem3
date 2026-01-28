@@ -10,13 +10,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_env(key):
+    """배포 환경(Secrets)과 로컬(.env) 환경 변수 통합 로드"""
     if key in st.secrets:
         return st.secrets[key]
     return os.getenv(key)
 
+# 모델명 설정 (관리자님 터미널 진단 결과 반영)
+EMBED_MODEL = "models/gemini-embedding-001"
+CHAT_MODEL = "models/gemini-3-flash-preview"
+
 st.set_page_config(page_title="Cement Expert AI (Full Memory)", page_icon="🏗️", layout="wide")
 
-# 2. 로그인 시스템 (기존 유지)
+# 2. 로그인 시스템
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -38,6 +43,7 @@ def login_page():
 def main_app():
     @st.cache_resource
     def init_clients():
+        # Pinecone 및 Gemini 3 SDK 초기화
         pc = Pinecone(api_key=get_env("PINECONE_API_KEY"))
         idx = pc.Index(get_env("PINECONE_INDEX_NAME"))
         g_client = genai.Client(api_key=get_env("GEMINI_API_KEY"))
@@ -48,6 +54,7 @@ def main_app():
     with st.sidebar:
         st.header("🔧 시스템 상태")
         st.success("데이터베이스 연결됨 (RAG)")
+        st.info(f"임베딩: {EMBED_MODEL}")
         st.info("지능형 메모리 활성화 (Full History)")
         st.markdown("---")
         if st.button("로그아웃", use_container_width=True):
@@ -55,11 +62,11 @@ def main_app():
             st.rerun()
 
     st.title("🏗️ 시멘트 생산·품질 기술 고문")
-    st.caption("🚀 Gemini 3 Flash & Multi-Turn Conversation Memory")
+    st.caption(f"🚀 {CHAT_MODEL} & Multi-Turn Conversation Memory")
 
-    # [중요] 대화 기록 관리 및 초기화
+    # 대화 기록 관리 및 초기화
     if "messages" not in st.session_state:
-        st.session_state.messages = [] # 빈 리스트로 시작 (첫 메시지는 루프 밖에서 처리)
+        st.session_state.messages = []
 
     # 대화 기록 출력 (UI)
     for msg in st.session_state.messages:
@@ -74,10 +81,11 @@ def main_app():
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("과거 대화와 전문 문서를 종합 분석 중..."):
+            with st.spinner("과거 대화 맥락과 전문 문서를 종합 분석 중..."):
                 try:
                     # [Step 1] 수동 임베딩 및 검색 (400 에러 방지)
-                    emb_res = client.models.embed_content(model="models/text-embedding-004", contents=prompt)
+                    # 768 Dimension 호환이 확인된 001 모델 사용
+                    emb_res = client.models.embed_content(model=EMBED_MODEL, contents=prompt)
                     search_res = index.query(vector=emb_res.embeddings[0].values, top_k=15, include_metadata=True)
 
                     context_text = ""
@@ -87,7 +95,7 @@ def main_app():
                         context_text += f"\n[출처: {meta.get('source')} (P.{meta.get('page')})]\n{meta.get('text', '')}\n---"
                         sources.add(f"{meta.get('source')} (P.{int(meta.get('page', 0))})")
 
-                    # [Step 2] 시스템 지침 구성
+                    # [Step 2] 시스템 지침 구성 (이전 코드의 고도화된 프롬프트 반영)
                     system_instruction = f"""
                     당신은 30년 경력의 시멘트 기술 고문입니다. 
                     관리자와의 대화 흐름을 완벽히 파악하여, 이전 질문에서 다룬 맥락을 유지하며 답변하세요.
@@ -105,7 +113,6 @@ def main_app():
                     """
 
                     # [Step 3] 대화 기록(History) 재구성 (Gemini API 형식에 맞춤)
-                    # 과거 메시지들을 Gemini가 이해할 수 있는 형태의 'contents' 리스트로 변환합니다.
                     chat_history = []
                     for m in st.session_state.messages[:-1]: # 마지막 질문 제외한 과거 기록
                         role = "user" if m["role"] == "user" else "model"
@@ -115,7 +122,7 @@ def main_app():
                     google_search_tool = types.Tool(google_search=types.GoogleSearch())
                     
                     response = client.models.generate_content(
-                        model="gemini-3-flash-preview",
+                        model=CHAT_MODEL,
                         contents=chat_history + [
                             types.Content(role="user", parts=[types.Part(text=f"{system_instruction}\n\n최종 질문: {prompt}")])
                         ],
@@ -133,5 +140,7 @@ def main_app():
                     st.error(f"⚠️ 처리 중 오류 발생: {e}")
 
 if __name__ == "__main__":
-    if not st.session_state.logged_in: login_page()
-    else: main_app()
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        main_app()
