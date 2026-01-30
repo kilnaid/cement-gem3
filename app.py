@@ -35,7 +35,7 @@ def login_page():
             upw = st.text_input("Password", type="password", placeholder="Manager Password")
             if st.form_submit_button("시스템 접속", use_container_width=True):
                 # 사용자 고유 계정 정보 활용
-                if uid == "kilnaid" and upw == "1q2w3e4r":
+                if uid == "sampyo" and upw == "1q2w3e4r":
                     st.session_state.logged_in = True
                     st.rerun()
                 else:
@@ -157,3 +157,4 @@ if __name__ == "__main__":
         login_page()
     else:
         main_app()
+
