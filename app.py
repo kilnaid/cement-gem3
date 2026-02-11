@@ -69,6 +69,24 @@ def build_uploaded_file_context(uploaded_file):
 
     return f"Unsupported uploaded file type: {file_name}", None
 
+
+def build_uploaded_files_context(uploaded_files):
+    """Build context from multiple uploaded tabular/image files."""
+    if not uploaded_files:
+        return "", []
+
+    context_chunks = []
+    image_parts = []
+
+    for uploaded_file in uploaded_files:
+        context, image_part = build_uploaded_file_context(uploaded_file)
+        if context:
+            context_chunks.append(context)
+        if image_part is not None:
+            image_parts.append(image_part)
+
+    return "\n\n".join(context_chunks), image_parts
+
 # 모델 및 인덱스 규격 설정
 EMBED_MODEL = "models/gemini-embedding-001"
 CHAT_MODEL = "models/gemini-3-flash-preview"
@@ -111,14 +129,15 @@ def main_app():
         st.header("🔧 시스템 상태")
         st.success("데이터베이스 연결됨 (RAG)")
         st.info(f"임베딩: {EMBED_MODEL} (768d)")
-        uploaded_file = st.file_uploader(
-            "Upload Excel/Image for current analysis",
+        uploaded_files = st.file_uploader(
+            "Upload Excel/Image files for current analysis",
             type=["xlsx", "xls", "csv", "png", "jpg", "jpeg", "bmp", "gif", "webp"],
-            accept_multiple_files=False,
-            help="The uploaded file is included as context in AI reasoning for your question.",
+            accept_multiple_files=True,
+            help="Uploaded files are included as context in AI reasoning for your question.",
         )
-        if uploaded_file is not None:
-            st.success(f"Uploaded: {uploaded_file.name}")
+        if uploaded_files:
+            st.success(f"Uploaded files: {len(uploaded_files)}")
+            st.caption(", ".join([f.name for f in uploaded_files]))
         st.markdown("---")
         if st.button("로그아웃", use_container_width=True):
             st.session_state.logged_in = False
@@ -146,7 +165,7 @@ def main_app():
         with st.chat_message("assistant"):
             with st.spinner("과거 대화 맥락과 42개 전문 문서를 심층 분석 중..."):
                 try:
-                    uploaded_context, uploaded_image_part = build_uploaded_file_context(uploaded_file)
+                    uploaded_context, uploaded_image_parts = build_uploaded_files_context(uploaded_files)
 
                     # [Step 1] 수동 임베딩 및 검색 (차원 불일치 에러 해결)
                     # output_dimensionality를 설정하여 3072 -> 768로 강제 조정합니다.
@@ -200,8 +219,8 @@ def main_app():
                     final_user_text += f"최종 질문: {prompt}"
 
                     user_parts = [types.Part(text=final_user_text)]
-                    if uploaded_image_part is not None:
-                        user_parts.append(uploaded_image_part)
+                    if uploaded_image_parts:
+                        user_parts.extend(uploaded_image_parts)
                     
                     response = client.models.generate_content(
                         model=CHAT_MODEL,
