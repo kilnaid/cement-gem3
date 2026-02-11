@@ -2,3 +2,6 @@ streamlit
 pinecone>=6.0.0
 google-genai>=1.0.0
 python-dotenv
+pandas
+openpyxl
+Pillow

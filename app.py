@@ -1,10 +1,13 @@
 import streamlit as st
 import os
 import time
+import io
 from pinecone import Pinecone
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import pandas as pd
+from PIL import Image
 
 # 1. 환경 설정 및 초기화
 load_dotenv()
@@ -14,6 +17,57 @@ def get_env(key):
     if key in st.secrets:
         return st.secrets[key]
     return os.getenv(key)
+
+
+def build_uploaded_file_context(uploaded_file):
+    """업로드 파일 요약(표) 또는 이미지 파트를 생성해 추론 컨텍스트로 반환."""
+    if uploaded_file is None:
+        return "", None
+
+    file_name = uploaded_file.name
+    file_bytes = uploaded_file.getvalue()
+    ext = os.path.splitext(file_name)[1].lower()
+
+    if ext in [".xlsx", ".xls", ".csv"]:
+        try:
+            if ext == ".csv":
+                df = pd.read_csv(io.BytesIO(file_bytes))
+                sheet_name = "csv"
+            else:
+                xls = pd.ExcelFile(io.BytesIO(file_bytes))
+                sheet_name = xls.sheet_names[0]
+                df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name)
+
+            head_text = df.head(5).to_csv(index=False)
+            col_preview = ", ".join(map(str, df.columns[:40]))
+            context = (
+                f"Uploaded file: {file_name}\n"
+                f"Type: tabular\n"
+                f"Sheet: {sheet_name}\n"
+                f"Rows: {len(df)}, Columns: {len(df.columns)}\n"
+                f"Columns preview: {col_preview}\n"
+                f"Top 5 rows (CSV):\n{head_text}"
+            )
+            return context, None
+        except Exception as e:
+            return f"Uploaded tabular file parse failed: {file_name}, error: {e}", None
+
+    if ext in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"]:
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            mime = uploaded_file.type or "image/png"
+            image_part = types.Part.from_bytes(data=file_bytes, mime_type=mime)
+            context = (
+                f"Uploaded file: {file_name}\n"
+                f"Type: image\n"
+                f"Image size: {img.width}x{img.height}, mode: {img.mode}\n"
+                "Use this image as additional evidence for analysis."
+            )
+            return context, image_part
+        except Exception as e:
+            return f"Uploaded image parse failed: {file_name}, error: {e}", None
+
+    return f"Unsupported uploaded file type: {file_name}", None
 
 # 모델 및 인덱스 규격 설정
 EMBED_MODEL = "models/gemini-embedding-001"
@@ -57,7 +111,14 @@ def main_app():
         st.header("🔧 시스템 상태")
         st.success("데이터베이스 연결됨 (RAG)")
         st.info(f"임베딩: {EMBED_MODEL} (768d)")
-        st.info("지능형 메모리 활성화 (Full History)")
+        uploaded_file = st.file_uploader(
+            "Upload Excel/Image for current analysis",
+            type=["xlsx", "xls", "csv", "png", "jpg", "jpeg", "bmp", "gif", "webp"],
+            accept_multiple_files=False,
+            help="The uploaded file is included as context in AI reasoning for your question.",
+        )
+        if uploaded_file is not None:
+            st.success(f"Uploaded: {uploaded_file.name}")
         st.markdown("---")
         if st.button("로그아웃", use_container_width=True):
             st.session_state.logged_in = False
@@ -85,6 +146,8 @@ def main_app():
         with st.chat_message("assistant"):
             with st.spinner("과거 대화 맥락과 42개 전문 문서를 심층 분석 중..."):
                 try:
+                    uploaded_context, uploaded_image_part = build_uploaded_file_context(uploaded_file)
+
                     # [Step 1] 수동 임베딩 및 검색 (차원 불일치 에러 해결)
                     # output_dimensionality를 설정하여 3072 -> 768로 강제 조정합니다.
                     emb_res = client.models.embed_content(
@@ -130,11 +193,20 @@ def main_app():
 
                     # [Step 4] Gemini 3 답변 생성 (웹 검색 도구 포함)
                     google_search_tool = types.Tool(google_search=types.GoogleSearch())
+
+                    final_user_text = f"{system_instruction}\n\n"
+                    if uploaded_context:
+                        final_user_text += f"[Uploaded file context]\n{uploaded_context}\n\n"
+                    final_user_text += f"최종 질문: {prompt}"
+
+                    user_parts = [types.Part(text=final_user_text)]
+                    if uploaded_image_part is not None:
+                        user_parts.append(uploaded_image_part)
                     
                     response = client.models.generate_content(
                         model=CHAT_MODEL,
                         contents=chat_history + [
-                            types.Content(role="user", parts=[types.Part(text=f"{system_instruction}\n\n최종 질문: {prompt}")])
+                            types.Content(role="user", parts=user_parts)
                         ],
                         config=types.GenerateContentConfig(
                             tools=[google_search_tool], 
