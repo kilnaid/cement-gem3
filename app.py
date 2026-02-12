@@ -143,7 +143,7 @@ def main_app():
             st.session_state.logged_in = False
             st.rerun()
 
-    st.title("🏗️ 시멘트 생산·품질 기술 고문")
+    st.title("🏗️ Cement production and quality expert")
     st.caption(f"🚀 {CHAT_MODEL} & Deep-Dive RAG Insight")
 
     # 대화 기록 관리 및 초기화
@@ -163,7 +163,7 @@ def main_app():
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("과거 대화 맥락과 42개 전문 문서를 심층 분석 중..."):
+            with st.spinner("과거 대화 맥락과 30개 전문 문서를 심층 분석 중..."):
                 try:
                     uploaded_context, uploaded_image_parts = build_uploaded_files_context(uploaded_files)
 
@@ -200,7 +200,7 @@ def main_app():
                     1. **심층적 인과관계 분석**: 표면적인 현상(예: f-CaO 상승) 이면에 숨겨진 열역학적, 화학적 메커니즘을 상세히 설명하세요. 복합적인 변수들 간의 상관관계를 파악하여 기술하세요.
                     2. **풍부한 지식 활용**: 제공된 [기술 문서 내용]을 꼼꼼히 검토하여 수치, 화학식($CaO$, $C_3S$ 등), 설비 사양을 구체적으로 인용하며 신뢰도를 높이세요.
                     3. **자유롭고 상세한 서술**: 전문가가 직접 보고서를 작성하듯 논리적이고 유려하게 답변하세요. 전체적인 설명의 깊이를 최우선으로 하여 최소 1000자 이상 상세히 서술하세요.
-                    4. **하이브리드 지식 결합**: 문서에 없는 내용은 실시간 웹 검색 정보를 활용하고, 당신의 공학적 추론을 결합하여 'Deep Insight'를 제공하세요.
+                    4. **하이브리드 지식 결합**: 문서의 내용과 실시간 웹 검색 정보를 같이 활용하고, 당신의 공학적 추론을 결합하여 'Deep Insight'를 제공하세요.
                     5. **전문가적 제언**: 관리자가 미처 생각하지 못한 공정상의 유연성(Buffer), 설비 안정성, 원료 균일성 등의 관점에서 능동적인 조언을 아끼지 마세요.
                     """
 
@@ -229,7 +229,7 @@ def main_app():
                         ],
                         config=types.GenerateContentConfig(
                             tools=[google_search_tool], 
-                            temperature=0.4 # 추론의 유연성을 위해 온도를 소폭 조정
+                            temperature=0.35 # 추론의 유연성을 위해 온도를 소폭 조정
                         )
                     )
                     
@@ -248,4 +248,5 @@ if __name__ == "__main__":
         login_page()
     else:
         main_app()
+
 
